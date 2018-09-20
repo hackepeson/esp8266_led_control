@@ -4,30 +4,30 @@
 #include "FastLED.h"
 #include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
-#include <ArduinoOTA.h>
+//#include <ArduinoOTA.h>
 
 #define MILLION 1000000
 
 /************ WIFI and MQTT Information (CHANGE THESE FOR YOUR SETUP) ******************/
-const char* ssid = "YourSSID"; //type your WIFI information inside the quotes
-const char* password = "YourWIFIpassword";
+const char* ssid = "S130"; //type your WIFI information inside the quotes
+const char* password = "";
 const char* mqtt_server = "your.MQTT.server.ip";
-const char* mqtt_username = "yourMQTTusername";
-const char* mqtt_password = "yourMQTTpassword";
+const char* mqtt_username = "";
+const char* mqtt_password = "";
 const int mqtt_port = 1883;
 
 
 
 /**************************** FOR OTA **************************************************/
-#define SENSORNAME "porch" //change this to whatever you want to call your device
-#define OTApassword "yourOTApassword" //the password you will need to enter to upload remotely via the ArduinoIDE
-int OTAport = 8266;
+//#define SENSORNAME "porch" //change this to whatever you want to call your device
+//#define OTApassword "yourOTApassword" //the password you will need to enter to upload remotely via the ArduinoIDE
+//int OTAport = 8266;
 
 
 
 /************* MQTT TOPICS (change these topics as you wish)  **************************/
-const char* light_state_topic = "bruh/porch";
-const char* light_set_topic = "bruh/porch/set";
+const char* light_state_topic = "esp_led/light";
+const char* light_set_topic = "esp_led/light/set";
 
 const char* on_cmd = "ON";
 const char* off_cmd = "OFF";
@@ -167,31 +167,31 @@ void setup() {
   client.setCallback(callback);
 
   //OTA SETUP
-  ArduinoOTA.setPort(OTAport);
+  //ArduinoOTA.setPort(OTAport);
   // Hostname defaults to esp8266-[ChipID]
-  ArduinoOTA.setHostname(SENSORNAME);
+  //ArduinoOTA.setHostname(SENSORNAME);
 
   // No authentication by default
-  ArduinoOTA.setPassword((const char *)OTApassword);
+  //ArduinoOTA.setPassword((const char *)OTApassword);
 
-  ArduinoOTA.onStart([]() {
-    Serial.println("Starting");
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-    else if (error == OTA_END_ERROR) Serial.println("End Failed");
-  });
-  ArduinoOTA.begin();
+  //ArduinoOTA.onStart([]() {
+  //  Serial.println("Starting");
+  //});
+  //ArduinoOTA.onEnd([]() {
+  //  Serial.println("\nEnd");
+  //});
+  //ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+  //  Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  //});
+  //ArduinoOTA.onError([](ota_error_t error) {
+  //  Serial.printf("Error[%u]: ", error);
+  //  if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+  //  else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+  //  else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+  //  else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+  //  else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  //});
+  //ArduinoOTA.begin();
 
   Serial.println("Ready");
   Serial.print("IP Address: ");
@@ -479,7 +479,7 @@ void loop() {
 
   client.loop();
 
-  ArduinoOTA.handle();
+  //ArduinoOTA.handle();
 
 
   //EFFECT BPM
