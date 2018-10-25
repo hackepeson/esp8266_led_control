@@ -4,14 +4,25 @@
 #include "FastLED.h"
 #include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
-//#include <ArduinoOTA.h>
+#include <DHT.h>
 
+//#include <ArduinoOTA.h>
+/******************** Web server **************************/
+#include <ESP8266WebServer.h>
+ESP8266WebServer server(80);
+const char* serverIndex = "<form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>";
+const char* host = "esp8266-webupdate";
+/**********************************************************/
 #define MILLION 1000000
+
+#define DHTPIN 2     // what pin we're connected to
+#define DHTTYPE DHT22   // DHT 22  (AM2302)
+
 
 /************ WIFI and MQTT Information (CHANGE THESE FOR YOUR SETUP) ******************/
 const char* ssid = "S130"; //type your WIFI information inside the quotes
 const char* password = "";
-const char* mqtt_server = "your.MQTT.server.ip";
+const char* mqtt_server = "192.168.0.103";
 const char* mqtt_username = "";
 const char* mqtt_password = "";
 const int mqtt_port = 1883;
@@ -19,7 +30,7 @@ const int mqtt_port = 1883;
 
 
 /**************************** FOR OTA **************************************************/
-//#define SENSORNAME "porch" //change this to whatever you want to call your device
+#define SENSORNAME "esp_led" //change this to whatever you want to call your device
 //#define OTApassword "yourOTApassword" //the password you will need to enter to upload remotely via the ArduinoIDE
 //int OTAport = 8266;
 
@@ -35,7 +46,9 @@ const char* effect = "solid";
 String effectString = "solid";
 String oldeffectString = "solid";
 
-
+/****************** DHT ********************/
+DHT dht(DHTPIN, DHTTYPE);
+unsigned long dhtOldReadtime = millis();
 
 /****************************************FOR JSON***************************************/
 const int BUFFER_SIZE = JSON_OBJECT_SIZE(10);
@@ -44,11 +57,11 @@ const int BUFFER_SIZE = JSON_OBJECT_SIZE(10);
 
 
 /*********************************** FastLED Defintions ********************************/
-#define NUM_LEDS    186
-#define DATA_PIN    5
+#define NUM_LEDS    300
+#define DATA_PIN    14
 //#define CLOCK_PIN 5
-#define CHIPSET     WS2811
-#define COLOR_ORDER BRG
+#define CHIPSET     WS2812B
+#define COLOR_ORDER GRB
 
 byte realRed = 0;
 byte realGreen = 0;
@@ -97,7 +110,8 @@ CRGBPalette16 gPal; //for fire
 static uint16_t dist;         // A random number for our noise generator.
 uint16_t scale = 30;          // Wouldn't recommend changing this on the fly, or the animation will be really blocky.
 uint8_t maxChanges = 48;      // Value for blending between palettes.
-CRGBPalette16 targetPalette(OceanColors_p);
+CRGBPalette16 targetPalette(LavaColors_p);
+
 CRGBPalette16 currentPalette(CRGB::Black);
 
 //TWINKLE
@@ -166,36 +180,69 @@ void setup() {
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 
-  //OTA SETUP
-  //ArduinoOTA.setPort(OTAport);
-  // Hostname defaults to esp8266-[ChipID]
-  //ArduinoOTA.setHostname(SENSORNAME);
+  /*********************************************************************************************/
+  if (WiFi.waitForConnectResult() == WL_CONNECTED) 
+  {
+    MDNS.begin(host);
+    server.on("/", HTTP_GET, []() {
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/html", serverIndex);
+    });
+    server.on("/update", HTTP_POST, []() {
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+      ESP.restart();
+    }, []() {
+      HTTPUpload& upload = server.upload();
+      if (upload.status == UPLOAD_FILE_START) 
+      {
+        Serial.setDebugOutput(true);
+        WiFiUDP::stopAll();
+        Serial.printf("Update: %s\n", upload.filename.c_str());
+        uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+        if (!Update.begin(maxSketchSpace)) 
+        { //start with max available size
+          Update.printError(Serial);
+        }
+      } 
+      else if (upload.status == UPLOAD_FILE_WRITE) 
+      {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) 
+        {
+          Update.printError(Serial);
+        }
+      } 
+      else if (upload.status == UPLOAD_FILE_END) 
+      {
+        if (Update.end(true)) 
+        { //true to set the size to the current progress
+          Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+        } 
+        else 
+        {
+          Update.printError(Serial);
+        }
+        Serial.setDebugOutput(false);
+      }
+      yield();
+    });
+    server.begin();
+    MDNS.addService("http", "tcp", 80);
 
-  // No authentication by default
-  //ArduinoOTA.setPassword((const char *)OTApassword);
-
-  //ArduinoOTA.onStart([]() {
-  //  Serial.println("Starting");
-  //});
-  //ArduinoOTA.onEnd([]() {
-  //  Serial.println("\nEnd");
-  //});
-  //ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-  //  Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  //});
-  //ArduinoOTA.onError([](ota_error_t error) {
-  //  Serial.printf("Error[%u]: ", error);
-  //  if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-  //  else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-  //  else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-  //  else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-  //  else if (error == OTA_END_ERROR) Serial.println("End Failed");
-  //});
-  //ArduinoOTA.begin();
+    Serial.printf("Ready! Open http://%s.local in your browser\n", host);
+  } 
+  else 
+  {
+    Serial.println("WiFi Failed");
+  }
+  /*********************************************************************************************/
+  
 
   Serial.println("Ready");
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
+
+  dht.begin();
 
 }
 
@@ -467,6 +514,7 @@ void loop() {
   if (!client.connected()) {
     reconnect();
   }
+  server.handleClient();
 
   if (WiFi.status() != WL_CONNECTED) {
     delay(1);
@@ -478,6 +526,32 @@ void loop() {
 
 
   client.loop();
+
+  if (millis() > (dhtOldReadtime + 10000))
+  {
+    dhtOldReadtime = millis();
+    char msg[50];
+  
+    float h = dht.readHumidity();
+    float t = dht.readTemperature();
+
+    // check if returns are valid, if they are NaN (not a number)
+    // then something went wrong!
+    if (isnan(t) || isnan(h))
+    {
+      Serial.println("Failed to read from DHT");
+    } else {
+      Serial.print("Humidity: ");
+      Serial.println(h);
+      snprintf (msg, 50, "%d", (int)h);
+      client.publish("sensor/humidity", msg);
+
+      Serial.print("Temperature: ");
+      Serial.println(t);
+      snprintf (msg, 50, "%d", (int)t);
+      client.publish("sensor/temperature", msg);
+    }
+  }
 
   //ArduinoOTA.handle();
 
@@ -515,7 +589,7 @@ void loop() {
   if (effectString == "confetti" ) {
     fadeToBlackBy( leds, NUM_LEDS, 25);
     int pos = random16(NUM_LEDS);
-    leds[pos] += CRGB(realRed + random8(64), realGreen, realBlue);
+    leds[pos] += CRGB(realRed + random16(64), realGreen, realBlue);
     if (transitionTime == 0 or transitionTime == NULL) {
       transitionTime = 30;
     }
@@ -612,14 +686,14 @@ void loop() {
       FastLED.clear();
       FastLED.show();
     }
-    ledstart = random8(NUM_LEDS);           // Determine starting location of flash
-    ledlen = random8(NUM_LEDS - ledstart);  // Determine length of flash (not to go beyond NUM_LEDS-1)
-    for (int flashCounter = 0; flashCounter < random8(3, flashes); flashCounter++) {
+    ledstart = random16(NUM_LEDS);           // Determine starting location of flash
+    ledlen = random16(NUM_LEDS - ledstart);  // Determine length of flash (not to go beyond NUM_LEDS-1)
+    for (int flashCounter = 0; flashCounter < random16(3, flashes); flashCounter++) {
       if (flashCounter == 0) dimmer = 5;    // the brightness of the leader is scaled down by a factor of 5
-      else dimmer = random8(1, 3);          // return strokes are brighter than the leader
+      else dimmer = random16(1, 3);          // return strokes are brighter than the leader
       fill_solid(leds + ledstart, ledlen, CHSV(255, 0, 255 / dimmer));
       showleds();    // Show a section of LED's
-      delay(random8(4, 10));                // each flash only lasts 4-10 milliseconds
+      delay(random16(4, 10));                // each flash only lasts 4-10 milliseconds
       fill_solid(leds + ledstart, ledlen, CHSV(255, 0, 0)); // Clear the section of LED's
       showleds();
       if (flashCounter == 0) delay (130);   // longer delay until next flash after the leader
